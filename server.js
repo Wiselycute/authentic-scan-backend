@@ -4,9 +4,10 @@ const { createApp } = require('./src/app');
 
 const start = async () => {
   const port = process.env.PORT || 4000;
+  const host = process.env.HOST || '0.0.0.0';
   const app = createApp();
-  app.listen(port, () => {
-    console.log(`AuthentiScan API running on http://localhost:${port}`);
+  app.listen(port, host, () => {
+    console.log(`AuthentiScan API running on http://${host}:${port}`);
   });
 
   if (!process.env.GEMINI_API_KEY) {
