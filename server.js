@@ -4,17 +4,22 @@ const { createApp } = require('./src/app');
 
 const start = async () => {
   const port = process.env.PORT || 4000;
-  await connect();
+  const app = createApp();
+  app.listen(port, () => {
+    console.log(`AuthentiScan API running on http://localhost:${port}`);
+  });
 
   if (!process.env.GEMINI_API_KEY) {
     console.warn('[AuthentiScan] GEMINI_API_KEY is missing. AI analysis will run in fallback mode.');
     console.warn('[AuthentiScan] Set GEMINI_API_KEY in backend/.env to enable full Gemini analysis.');
   }
 
-  const app = createApp();
-  app.listen(port, () => {
-    console.log(`AuthentiScan API running on http://localhost:${port}`);
-  });
+  try {
+    await connect();
+    console.log('[AuthentiScan] MongoDB connected');
+  } catch (error) {
+    console.error('[AuthentiScan] MongoDB connection failed after startup:', error);
+  }
 };
 
 start().catch((error) => {
