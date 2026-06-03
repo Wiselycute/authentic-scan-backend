@@ -27,6 +27,7 @@ const createApp = () => {
       limit: 200,
       standardHeaders: true,
       legacyHeaders: false,
+      skip: (req) => req.path === '/health' || req.path === '/',
     })
   );
 

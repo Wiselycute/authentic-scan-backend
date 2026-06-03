@@ -2,6 +2,14 @@ require('dotenv').config();
 const { connect } = require('./src/config/database');
 const { createApp } = require('./src/app');
 
+process.on('unhandledRejection', (reason) => {
+  console.error('[AuthentiScan] Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[AuthentiScan] Uncaught exception:', error);
+});
+
 const start = async () => {
   const port = process.env.PORT || 4000;
   const host = process.env.HOST || '0.0.0.0';
