@@ -37,6 +37,13 @@ const createApp = () => {
     });
   });
 
+  app.get('/', (_req, res) => {
+    res.status(200).json({
+      success: true,
+      message: 'AuthentiScan API is running',
+    });
+  });
+
   app.use('/api/auth', authRoute);
   app.use('/api/scans', scanRoute);
   app.use('/api/reports', reportRoute);
