@@ -16,9 +16,6 @@ const { notFound, errorHandler } = require('./middleware/error.middleware');
 const createApp = () => {
   const app = express();
 
-  // Railway and similar hosts sit behind a reverse proxy.
-  app.set('trust proxy', 1);
-
   app.use(helmet());
   app.use(cors());
   app.use(express.json({ limit: '10mb' }));

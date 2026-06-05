@@ -1,11 +1,4 @@
 require('dotenv').config();
-
-// Some hosting runtimes expose partial Web Crypto only; MongoDB expects crypto.randomBytes.
-if (typeof globalThis.crypto === 'undefined' || typeof globalThis.crypto.randomBytes !== 'function') {
-  const nodeCrypto = require('node:crypto');
-  globalThis.crypto = nodeCrypto;
-}
-
 const { connect } = require('./src/config/database');
 const { createApp } = require('./src/app');
 
