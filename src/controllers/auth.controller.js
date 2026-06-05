@@ -32,10 +32,13 @@ const generateOtp = () => `${crypto.randomInt(0, 1000000)}`.padStart(6, '0');
 
 const requestRegisterOtp = async (req, res, next) => {
   try {
+    const startedAt = Date.now();
     const email = req.body.email.toLowerCase();
+    console.log(`[AuthentiScan] request-otp started for ${email}`);
 
     const existing = await User.findOne({ email });
     if (existing) {
+      console.log(`[AuthentiScan] request-otp rejected (existing email) for ${email}`);
       return res.status(400).json({ success: false, message: 'Email already exists' });
     }
 
@@ -54,19 +57,33 @@ const requestRegisterOtp = async (req, res, next) => {
       },
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
+    console.log(`[AuthentiScan] request-otp record updated for ${email}`);
 
     const subject = 'Your AuthentiScan verification code';
     const text = `Your verification code is ${otp}. It expires in ${REGISTER_OTP_TTL_MINUTES} minutes.`;
     const html = `<p>Your verification code is <strong>${otp}</strong>.</p><p>This code expires in ${REGISTER_OTP_TTL_MINUTES} minutes.</p>`;
 
-    const sent = await sendMail(email, subject, text, html);
+    const controllerMailTimeoutMs = Number(process.env.REGISTER_OTP_SEND_TIMEOUT_MS || 9000);
+    const sent = await Promise.race([
+      sendMail(email, subject, text, html),
+      new Promise((resolve) => {
+        setTimeout(
+          () => resolve({ ok: false, error: `Controller mail timeout after ${controllerMailTimeoutMs}ms` }),
+          controllerMailTimeoutMs
+        );
+      }),
+    ]);
+
     if (!sent.ok) {
+      console.error(`[AuthentiScan] request-otp failed for ${email}: ${sent.error}`);
       return res.status(500).json({
         success: false,
         message: 'Failed to send OTP email',
         error: sent.error,
       });
     }
+
+    console.log(`[AuthentiScan] request-otp sent for ${email} in ${Date.now() - startedAt}ms`);
 
     return res.status(200).json({
       success: true,
