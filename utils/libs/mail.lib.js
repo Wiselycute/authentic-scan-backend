@@ -137,6 +137,16 @@ const sendWithResend = async (to, subject, text, html = null) => {
 };
 
 const sendMail = async (to, subject, text, html = null) => {
+    if (resendApiKey) {
+        const resendResult = await sendWithResend(to, subject, text, html);
+        if (resendResult.ok) {
+            console.log('Email sent successfully (Resend API primary)');
+            return { ok: true };
+        }
+
+        console.error('Resend API primary failed:', resendResult.error);
+    }
+
     let primaryError = null;
 
     try {
@@ -182,7 +192,9 @@ const sendMail = async (to, subject, text, html = null) => {
             }
         }
 
-        const resendResult = await sendWithResend(to, subject, text, html);
+        const resendResult = resendApiKey
+            ? await sendWithResend(to, subject, text, html)
+            : { ok: false, error: 'RESEND_API_KEY is not configured' };
         if (resendResult.ok) {
             console.log('Email sent successfully (Resend API fallback)');
             return { ok: true };

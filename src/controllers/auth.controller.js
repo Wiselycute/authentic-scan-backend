@@ -63,16 +63,7 @@ const requestRegisterOtp = async (req, res, next) => {
     const text = `Your verification code is ${otp}. It expires in ${REGISTER_OTP_TTL_MINUTES} minutes.`;
     const html = `<p>Your verification code is <strong>${otp}</strong>.</p><p>This code expires in ${REGISTER_OTP_TTL_MINUTES} minutes.</p>`;
 
-    const controllerMailTimeoutMs = Number(process.env.REGISTER_OTP_SEND_TIMEOUT_MS || 9000);
-    const sent = await Promise.race([
-      sendMail(email, subject, text, html),
-      new Promise((resolve) => {
-        setTimeout(
-          () => resolve({ ok: false, error: `Controller mail timeout after ${controllerMailTimeoutMs}ms` }),
-          controllerMailTimeoutMs
-        );
-      }),
-    ]);
+    const sent = await sendMail(email, subject, text, html);
 
     if (!sent.ok) {
       console.error(`[AuthentiScan] request-otp failed for ${email}: ${sent.error}`);
