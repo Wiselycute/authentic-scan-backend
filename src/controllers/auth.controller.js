@@ -61,6 +61,7 @@ const requestRegisterOtp = async (req, res, next) => {
 
     const sent = await sendMail(email, subject, text, html);
     if (!sent) {
+      await EmailOtp.deleteOne({ email, purpose: REGISTER_OTP_PURPOSE });
       return res.status(500).json({ success: false, message: 'Failed to send OTP email' });
     }
 
