@@ -6,7 +6,9 @@ const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure =
     typeof process.env.SMTP_SECURE === 'string' ? process.env.SMTP_SECURE === 'true' : smtpPort === 465;
 const sendTimeoutMs = Number(process.env.SMTP_SEND_TIMEOUT_MS || 12000);
-const smtpUser = process.env.SMTP_USER;
+const smtpUser = process.env.SMTP_USER ? process.env.SMTP_USER.trim().replace(/^['\"]|['\"]$/g, '') : '';
+const resendApiKey = process.env.RESEND_API_KEY;
+const resendFrom = process.env.RESEND_FROM || smtpUser;
 
 const sanitizeSmtpPass = (value) => {
     if (!value) {
@@ -87,28 +89,79 @@ const sendWithTimeout = async (activeTransporter, mailOptions) => {
     return Promise.race([sendPromise, timeoutPromise]);
 };
 
-const sendMail = async (to, subject, text, html = null) => {
+const sendWithResend = async (to, subject, text, html = null) => {
+    if (!resendApiKey) {
+        return { ok: false, error: 'RESEND_API_KEY is not configured' };
+    }
+
+    if (!resendFrom) {
+        return { ok: false, error: 'RESEND_FROM is not configured' };
+    }
+
+    if (typeof fetch !== 'function') {
+        return { ok: false, error: 'Global fetch is unavailable in this Node runtime' };
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), sendTimeoutMs);
+
     try {
-        if (!smtpconfig.auth.user || !smtpconfig.auth.pass) {
-            const errorMessage = 'SMTP credentials are missing: set SMTP_USER and SMTP_PASS';
-            console.error(errorMessage);
-            return { ok: false, error: errorMessage };
+        const response = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${resendApiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                from: resendFrom,
+                to: [to],
+                subject,
+                text,
+                ...(html ? { html } : {}),
+            }),
+            signal: controller.signal,
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const err = data?.message || data?.error || `Resend API error (${response.status})`;
+            return { ok: false, error: String(err) };
         }
 
-    const mailOptions = {
+        return { ok: true };
+    } catch (error) {
+        return { ok: false, error: error?.message || String(error) };
+    } finally {
+        clearTimeout(timeout);
+    }
+};
+
+const sendMail = async (to, subject, text, html = null) => {
+    let primaryError = null;
+
+    try {
+        if (!smtpconfig.auth.user || !smtpconfig.auth.pass) {
+            throw new Error('SMTP credentials are missing: set SMTP_USER and SMTP_PASS');
+        }
+
+        const mailOptions = {
             from: `"${appName}" <${smtpconfig.auth.user}>`,
             to,
             subject,
             text,
-    };
-    if (html) {
+        };
+        if (html) {
             mailOptions.html = html;
-    }
+        }
 
         await sendWithTimeout(transporter, mailOptions);
         console.log('Email sent successfully');
         return { ok: true };
     } catch (error) {
+        primaryError = error && typeof error === 'object'
+            ? error.response || error.code || error.message || 'Unknown SMTP error'
+            : String(error);
+
         if (fallbackTransporter) {
             try {
                 await sendWithTimeout(fallbackTransporter, {
@@ -125,14 +178,19 @@ const sendMail = async (to, subject, text, html = null) => {
                     ? fallbackError.response || fallbackError.code || fallbackError.message || 'Unknown SMTP fallback error'
                     : String(fallbackError);
                 console.error('Error sending email (fallback):', fallbackDetail);
+                primaryError = `${primaryError}; fallback: ${fallbackDetail}`;
             }
         }
 
-        const detail = error && typeof error === 'object'
-            ? error.response || error.code || error.message || 'Unknown SMTP error'
-            : String(error);
-        console.error('Error sending email:', detail);
-        return { ok: false, error: String(detail) };
+        const resendResult = await sendWithResend(to, subject, text, html);
+        if (resendResult.ok) {
+            console.log('Email sent successfully (Resend API fallback)');
+            return { ok: true };
+        }
+
+        const combinedError = `SMTP failed: ${String(primaryError)}; Resend failed: ${resendResult.error}`;
+        console.error('Error sending email:', combinedError);
+        return { ok: false, error: combinedError };
     }
 };
 
