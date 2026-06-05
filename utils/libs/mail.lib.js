@@ -6,11 +6,27 @@ const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure =
     typeof process.env.SMTP_SECURE === 'string' ? process.env.SMTP_SECURE === 'true' : smtpPort === 465;
 const sendTimeoutMs = Number(process.env.SMTP_SEND_TIMEOUT_MS || 12000);
+const smtpUser = process.env.SMTP_USER;
+
+const sanitizeSmtpPass = (value) => {
+    if (!value) {
+        return value;
+    }
+
+    // Gmail app passwords are often copied with spaces for readability.
+    if ((smtpService || '').toLowerCase() === 'gmail') {
+        return value.replace(/\s+/g, '');
+    }
+
+    return value;
+};
+
+const smtpPass = sanitizeSmtpPass(process.env.SMTP_PASS);
 
 const smtpconfig = {
     auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        user: smtpUser,
+        pass: smtpPass,
     },
     connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 10000),
     greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 10000),
@@ -19,6 +35,10 @@ const smtpconfig = {
 
 if (smtpHost) {
     smtpconfig.host = smtpHost;
+    smtpconfig.port = smtpPort;
+    smtpconfig.secure = smtpSecure;
+} else if ((smtpService || '').toLowerCase() === 'gmail') {
+    smtpconfig.host = 'smtp.gmail.com';
     smtpconfig.port = smtpPort;
     smtpconfig.secure = smtpSecure;
 } else {
@@ -37,8 +57,9 @@ const transporter = nodemailer.createTransport(smtpconfig);
 const sendMail = async (to, subject, text, html = null) => {
     try {
         if (!smtpconfig.auth.user || !smtpconfig.auth.pass) {
-            console.error('SMTP credentials are missing: set SMTP_USER and SMTP_PASS');
-            return false;
+            const errorMessage = 'SMTP credentials are missing: set SMTP_USER and SMTP_PASS';
+            console.error(errorMessage);
+            return { ok: false, error: errorMessage };
         }
 
     const mailOptions = {
@@ -58,10 +79,13 @@ const sendMail = async (to, subject, text, html = null) => {
 
         await Promise.race([sendPromise, timeoutPromise]);
         console.log('Email sent successfully');
-        return true;
+        return { ok: true };
     } catch (error) {
-        console.error('Error sending email:', error.message || error);
-        return false;
+        const detail = error && typeof error === 'object'
+            ? error.response || error.code || error.message || 'Unknown SMTP error'
+            : String(error);
+        console.error('Error sending email:', detail);
+        return { ok: false, error: String(detail) };
     }
 };
 
