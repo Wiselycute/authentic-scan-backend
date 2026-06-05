@@ -60,8 +60,12 @@ const requestRegisterOtp = async (req, res, next) => {
     const html = `<p>Your verification code is <strong>${otp}</strong>.</p><p>This code expires in ${REGISTER_OTP_TTL_MINUTES} minutes.</p>`;
 
     const sent = await sendMail(email, subject, text, html);
-    if (!sent) {
-      return res.status(500).json({ success: false, message: 'Failed to send OTP email' });
+    if (!sent.ok) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP email',
+        error: sent.error,
+      });
     }
 
     return res.status(200).json({
