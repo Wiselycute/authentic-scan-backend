@@ -1,4 +1,10 @@
 require('dotenv').config();
+
+// Some runtimes don't expose a global crypto binding expected by the MongoDB driver.
+if (typeof global.crypto === 'undefined') {
+  global.crypto = require('node:crypto');
+}
+
 const { connect } = require('./src/config/database');
 const { createApp } = require('./src/app');
 

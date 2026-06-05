@@ -16,6 +16,17 @@ const { notFound, errorHandler } = require('./middleware/error.middleware');
 const createApp = () => {
   const app = express();
 
+  // Behind Railway/reverse proxies, trust one hop so IP-based rate limiting works.
+  const trustProxyEnv = process.env.TRUST_PROXY;
+  if (typeof trustProxyEnv !== 'undefined') {
+    if (trustProxyEnv === 'true') app.set('trust proxy', true);
+    else if (trustProxyEnv === 'false') app.set('trust proxy', false);
+    else if (!Number.isNaN(Number(trustProxyEnv))) app.set('trust proxy', Number(trustProxyEnv));
+    else app.set('trust proxy', trustProxyEnv);
+  } else if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
+
   app.use(helmet());
   app.use(cors());
   app.use(express.json({ limit: '10mb' }));
