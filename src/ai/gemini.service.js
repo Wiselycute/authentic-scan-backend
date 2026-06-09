@@ -25,6 +25,16 @@ const normalizeStatus = (rawStatus) => {
 };
 
 const normalizeOptionalText = (value) => (typeof value === 'string' ? value.trim() : '');
+const normalizeStringArray = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 50);
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -68,6 +78,9 @@ const normalizeAnalysis = (analysis = {}) => {
     productName: normalizeOptionalText(analysis.productName),
     brandName: normalizeOptionalText(analysis.brandName),
     category: normalizeOptionalText(analysis.category),
+    manufacturer: normalizeOptionalText(analysis.manufacturer),
+    countryOfOrigin: normalizeOptionalText(analysis.countryOfOrigin),
+    ingredients: normalizeStringArray(analysis.ingredients),
     status,
     confidence,
     suspiciousIndicators: Array.isArray(analysis.suspiciousIndicators) ? analysis.suspiciousIndicators : [],

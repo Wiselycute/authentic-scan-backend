@@ -15,6 +15,16 @@ const { buildPagination } = require('../utils/pagination');
 const allowedStatuses = new Set(Object.values(VERIFICATION_STATUS));
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '');
+const normalizeStringArray = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+    .slice(0, 100);
+};
 
 const normalizeCategory = (value) => normalizeText(value);
 
@@ -64,6 +74,14 @@ const toHistoryItem = (scan) => ({
     : null,
   image: scan.uploadedImage?.url || '',
   imageThumbnail: scan.uploadedImage?.url || '',
+  manufacturer: scan.metadata?.manufacturer || scan.product?.manufacturer || '',
+  countryOfOrigin: scan.metadata?.countryOfOrigin || scan.brand?.country || scan.product?.countryOfOrigin || '',
+  ingredients: Array.isArray(scan.metadata?.ingredients)
+    ? scan.metadata.ingredients
+    : Array.isArray(scan.product?.ingredients)
+      ? scan.product.ingredients
+      : [],
+  productImage: scan.metadata?.productImage || scan.uploadedImage?.url || scan.product?.referenceImages?.[0] || '',
   barcodeValue: scan.barcode?.value || '',
   qrValue: scan.qrCode?.value || '',
   codeValue: scan.codeValue || scan.barcode?.value || scan.qrCode?.value || '',
@@ -83,7 +101,15 @@ const toScanDetail = (scan) => ({
   productName: scan.productName || scan.product?.name || 'Unknown Product',
   brandName: scan.brandName || scan.brand?.name || '',
   category: scan.category || scan.product?.category || '',
+  manufacturer: scan.metadata?.manufacturer || scan.product?.manufacturer || '',
+  countryOfOrigin: scan.metadata?.countryOfOrigin || scan.brand?.country || scan.product?.countryOfOrigin || '',
+  ingredients: Array.isArray(scan.metadata?.ingredients)
+    ? scan.metadata.ingredients
+    : Array.isArray(scan.product?.ingredients)
+      ? scan.product.ingredients
+      : [],
   imageThumbnail: scan.uploadedImage?.url || '',
+  productImage: scan.metadata?.productImage || scan.uploadedImage?.url || scan.product?.referenceImages?.[0] || '',
   codeValue: scan.codeValue || scan.barcode?.value || scan.qrCode?.value || '',
   verificationStatus: scan.verificationStatus,
   confidence: Number(scan?.aiAnalysis?.confidence || 0),
@@ -147,29 +173,65 @@ const resolveDetectedProductInfo = async ({ payload = {}, analysis = {}, barcode
   const payloadProductName = normalizeText(payload.productName);
   const payloadBrandName = normalizeText(payload.brandName);
   const payloadCategory = normalizeCategory(payload.category);
+  const payloadManufacturer = normalizeText(payload.manufacturer);
+  const payloadCountryOfOrigin = normalizeText(payload.countryOfOrigin);
+  const payloadIngredients = normalizeStringArray(payload.ingredients);
+  const payloadProductImage = normalizeText(payload.productImage);
 
   const analysisProductName = normalizeText(analysis.productName);
   const analysisBrandName = normalizeText(analysis.brandName);
   const analysisCategory = normalizeCategory(analysis.category);
+  const analysisManufacturer = normalizeText(analysis.manufacturer);
+  const analysisCountryOfOrigin = normalizeText(analysis.countryOfOrigin);
+  const analysisIngredients = normalizeStringArray(analysis.ingredients);
 
   const matchedProduct = await lookupProductByCodes({ barcodeValue, qrValue });
   const matchedBrandName = normalizeText(matchedProduct?.brand?.name);
+  const matchedIngredients = normalizeStringArray(matchedProduct?.ingredients);
 
   const productName = firstNonEmpty(payloadProductName, analysisProductName, matchedProduct?.name, 'Unknown Product');
   const brandName = firstNonEmpty(payloadBrandName, analysisBrandName, matchedBrandName);
   const category = firstNonEmpty(payloadCategory, analysisCategory, matchedProduct?.category);
+  const manufacturer = firstNonEmpty(payloadManufacturer, analysisManufacturer, matchedProduct?.manufacturer);
+  const countryOfOrigin = firstNonEmpty(
+    payloadCountryOfOrigin,
+    analysisCountryOfOrigin,
+    matchedProduct?.countryOfOrigin,
+    matchedProduct?.brand?.country
+  );
+  const ingredients = payloadIngredients.length > 0
+    ? payloadIngredients
+    : analysisIngredients.length > 0
+      ? analysisIngredients
+      : matchedIngredients;
+  const productImage = firstNonEmpty(payloadProductImage, matchedProduct?.referenceImages?.[0]);
 
   return {
     productName,
     brandName,
     category,
+    manufacturer,
+    countryOfOrigin,
+    ingredients,
+    productImage,
     barcodeValue: normalizeText(barcodeValue),
     qrValue: normalizeText(qrValue),
     codeValue: normalizeText(barcodeValue) || normalizeText(qrValue) || '',
   };
 };
 
-const upsertProductContext = async ({ productName, brandName, category, barcode, qrCode, analysis }) => {
+const upsertProductContext = async ({
+  productName,
+  brandName,
+  category,
+  manufacturer,
+  countryOfOrigin,
+  ingredients,
+  productImage,
+  barcode,
+  qrCode,
+  analysis,
+}) => {
   if (!productName && !brandName && !barcode && !qrCode) {
     return { product: null, brand: null };
   }
@@ -212,6 +274,10 @@ const upsertProductContext = async ({ productName, brandName, category, barcode,
         verificationStatus: resolveStatus(analysis),
         ...(brand?._id ? { brand: brand._id } : {}),
         ...(category ? { category } : {}),
+        ...(manufacturer ? { manufacturer } : {}),
+        ...(countryOfOrigin ? { countryOfOrigin } : {}),
+        ...(Array.isArray(ingredients) && ingredients.length > 0 ? { ingredients } : {}),
+        ...(productImage ? { referenceImages: [productImage] } : {}),
         ...(barcode ? { barcode } : {}),
         ...(qrCode ? { qrCode } : {}),
       },
@@ -396,6 +462,10 @@ const analyzeScan = async ({ user, file, source = 'upload', payload = {}, metada
     productName: detectedInfo.productName,
     brandName: detectedInfo.brandName,
     category: detectedInfo.category,
+    manufacturer: detectedInfo.manufacturer,
+    countryOfOrigin: detectedInfo.countryOfOrigin,
+    ingredients: detectedInfo.ingredients,
+    productImage: detectedInfo.productImage,
     barcode: barcodeResult.value,
     qrCode: qrResult.value,
     analysis,
@@ -419,6 +489,10 @@ const analyzeScan = async ({ user, file, source = 'upload', payload = {}, metada
       productName: detectedInfo.productName || null,
       brandName: detectedInfo.brandName || null,
       category: detectedInfo.category || null,
+      manufacturer: detectedInfo.manufacturer || null,
+      countryOfOrigin: detectedInfo.countryOfOrigin || null,
+      ingredients: Array.isArray(detectedInfo.ingredients) ? detectedInfo.ingredients : [],
+      productImage: detectedInfo.productImage || uploadedImage?.url || '',
       codeValue: detectedInfo.codeValue || null,
       qrInput: payload.qrInput || null,
       barcodeInput: payload.barcodeInput || null,
@@ -442,6 +516,14 @@ const analyzeScan = async ({ user, file, source = 'upload', payload = {}, metada
         productName: scan.productName,
         brandName: scan.brandName,
         category: scan.category,
+        manufacturer: scan.metadata?.manufacturer || scan.product?.manufacturer || '',
+        countryOfOrigin: scan.metadata?.countryOfOrigin || scan.brand?.country || scan.product?.countryOfOrigin || '',
+        ingredients: Array.isArray(scan.metadata?.ingredients)
+          ? scan.metadata.ingredients
+          : Array.isArray(scan.product?.ingredients)
+            ? scan.product.ingredients
+            : [],
+        productImage: scan.metadata?.productImage || scan.uploadedImage?.url || scan.product?.referenceImages?.[0] || '',
         suspiciousIndicators: scan.suspiciousIndicators,
         reasoning: scan.reasoning,
         recommendation: scan.recommendation,
